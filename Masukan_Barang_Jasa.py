@@ -19,6 +19,7 @@ def main():
         "3_AnalyticsBrgAccCtx.py",
         "4_AnalyticsJsAccCtx.py",
         "5_MergeHasil.py",
+        "config.conf",
         "hbrg.txt",
         "hjv.txt"
     ]
