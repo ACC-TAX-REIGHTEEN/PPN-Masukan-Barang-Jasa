@@ -59,8 +59,17 @@ def filter_data(dataframe, keywords, column_name='Nama Penjual'):
     if not keywords:
         return pd.DataFrame(columns=dataframe.columns)
     
+    target_column = column_name
+    if target_column not in dataframe.columns:
+        alt_column = "Nama Penjual Barang Kena Pajak/Barang Kena Pajak Tidak Berwujud/Jasa Kena Pajak"
+        if alt_column in dataframe.columns:
+            target_column = alt_column
+        else:
+            print(f"--> Peringatan: Kolom penjual tidak ditemukan di DataFrame.")
+            return pd.DataFrame(columns=dataframe.columns)
+
     pattern = '|'.join([k for k in keywords]) 
-    mask = dataframe[column_name].astype(str).str.contains(pattern, case=False, na=False)
+    mask = dataframe[target_column].astype(str).str.contains(pattern, case=False, na=False)
     return dataframe[mask]
 
 def main():
@@ -69,14 +78,24 @@ def main():
     print(f"--> Membaca {file_sumber}...")
 
     try:
-        df = pd.read_excel(file_sumber, sheet_name='data', 
-                           dtype={'NPWP Penjual': str, 'Nomor Faktur Pajak': str})
+        df = pd.read_excel(file_sumber, sheet_name='data')
     except FileNotFoundError:
         print(f"--> Error: File {file_sumber} tidak ditemukan di folder ini.")
         sys.exit()
 
-    df['Tanggal Faktur Pajak'] = pd.to_datetime(df['Tanggal Faktur Pajak'])
-    df['Tanggal Faktur Pajak'] = df['Tanggal Faktur Pajak'].apply(format_tanggal_indonesia)
+    col_tanggal_v1 = 'Tanggal Faktur Pajak'
+    col_tanggal_v2 = 'Faktur Pajak/Dokumen Tertentu/Nota Retur/Nota Pembatalan - Tanggal'
+
+    if col_tanggal_v1 in df.columns:
+        col_tanggal = col_tanggal_v1
+    elif col_tanggal_v2 in df.columns:
+        col_tanggal = col_tanggal_v2
+    else:
+        col_tanggal = None
+
+    if col_tanggal:
+        df[col_tanggal] = pd.to_datetime(df[col_tanggal])
+        df[col_tanggal] = df[col_tanggal].apply(format_tanggal_indonesia)
 
     keywords_jv = baca_filter_txt('hjv.txt')
     keywords_brg = baca_filter_txt('hbrg.txt')

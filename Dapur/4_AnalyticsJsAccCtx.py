@@ -1,5 +1,7 @@
 import itertools
 from datetime import datetime
+import os
+import sys
 import pandas as pd
 
 INPUT_FILE_CORETAX = "CtxJV_temp.xlsx"
@@ -42,7 +44,7 @@ def parse_indo_date(date_val):
             month = BULAN_MAP.get(month_str, "00")
             year = parts[2]
             return pd.to_datetime(f"{year}-{month}-{day}")
-    except:
+    except Exception:
         pass
     return pd.to_datetime(date_val, errors="coerce")
 
@@ -52,8 +54,25 @@ def fmt_date(d):
         return ""
     try:
         return d.strftime("%d %b %Y")
-    except:
+    except Exception:
         return str(d)
+
+
+def extract_column(df, name_candidates, index_candidates):
+    for name in name_candidates:
+        if name in df.columns:
+            return df[name]
+
+    for col in df.columns:
+        for name in name_candidates:
+            if name.lower() in str(col).lower():
+                return df[col]
+
+    for idx in index_candidates:
+        if 0 <= idx < len(df.columns):
+            return df.iloc[:, idx]
+
+    return pd.Series([None] * len(df))
 
 
 def main():
@@ -65,23 +84,65 @@ def main():
         print(f"--> Gagal membaca file: {e}")
         return
 
-    print("--> Membersihkan data...")
+    print("--> Membersihkan data dengan Fallback...")
+
+    s_nama_ct = extract_column(
+        df_coretax,
+        name_candidates=[
+            "Nama Penjual",
+            "Nama Penjual Barang Kena Pajak/Barang Kena Pajak Tidak Berwujud/Jasa Kena Pajak",
+            "Nama",
+            "Pemasok",
+        ],
+        index_candidates=[1, 0], 
+    )
+
+    s_tgl_ct = extract_column(
+        df_coretax,
+        name_candidates=[
+            "Tanggal Faktur Pajak",
+            "Faktur Pajak/Dokumen Tertentu/Nota Retur/Nota Pembatalan - Tanggal",
+            "Tanggal",
+            "Tgl",
+        ],
+        index_candidates=[3],
+    )
+
+    s_ppn_ct = extract_column(
+        df_coretax,
+        name_candidates=["PPN", "PPN (Rupiah)", "Jumlah PPN", "Nilai PPN"],
+        index_candidates=[11, 6],  
+    )
 
     ct_clean = pd.DataFrame()
-    ct_clean["Nama"] = df_coretax.iloc[:, 1]
-    ct_clean["Tanggal"] = df_coretax.iloc[:, 3].apply(parse_indo_date)
-    ct_clean["PPN"] = (
-        pd.to_numeric(df_coretax.iloc[:, 11], errors="coerce").fillna(0)
-    )
+    ct_clean["Nama"] = s_nama_ct.fillna("UNKNOWN")
+    ct_clean["Tanggal"] = s_tgl_ct.apply(parse_indo_date)
+    ct_clean["PPN"] = pd.to_numeric(s_ppn_ct, errors="coerce").fillna(0)
     ct_clean["ID"] = ct_clean.index
 
-    ac_clean = pd.DataFrame()
-    ac_clean["Tanggal_Raw"] = df_accurate.iloc[:, 1]
-    ac_clean["Tanggal"] = ac_clean["Tanggal_Raw"].apply(parse_indo_date)
-    ac_clean["Ref"] = df_accurate.iloc[:, 2].fillna("")
-    ac_clean["PPN"] = (
-        pd.to_numeric(df_accurate.iloc[:, 3], errors="coerce").fillna(0)
+    s_tgl_ac = extract_column(
+        df_accurate,
+        name_candidates=["Tgl. Pajak", "Tanggal Pajak", "Tanggal", "Tgl"],
+        index_candidates=[1],
     )
+
+    s_ref_ac = extract_column(
+        df_accurate,
+        name_candidates=["No. Faktur Pajak", "Ref", "Nomor Ref", "Keterangan"],
+        index_candidates=[2],
+    )
+
+    s_ppn_ac = extract_column(
+        df_accurate,
+        name_candidates=["Jumlah Pajak", "PPN", "Nilai PPN", "Jumlah"],
+        index_candidates=[3],
+    )
+
+    ac_clean = pd.DataFrame()
+    ac_clean["Tanggal_Raw"] = s_tgl_ac
+    ac_clean["Tanggal"] = ac_clean["Tanggal_Raw"].apply(parse_indo_date)
+    ac_clean["Ref"] = s_ref_ac.fillna("")
+    ac_clean["PPN"] = pd.to_numeric(s_ppn_ac, errors="coerce").fillna(0)
     ac_clean["ID"] = ac_clean.index
 
     print("--> Mencari angka saling hapus (offset)...")
@@ -316,9 +377,7 @@ def main():
 
     df_final = pd.DataFrame(final_rows)
     df_final["PPN Coretax"] = pd.to_numeric(df_final["PPN Coretax"])
-    df_final["Total PPN Accurate"] = pd.to_numeric(
-        df_final["Total PPN Accurate"]
-    )
+    df_final["Total PPN Accurate"] = pd.to_numeric(df_final["Total PPN Accurate"])
     df_final["Selisih"] = pd.to_numeric(df_final["Selisih"])
 
     grand_total_row = pd.DataFrame(
