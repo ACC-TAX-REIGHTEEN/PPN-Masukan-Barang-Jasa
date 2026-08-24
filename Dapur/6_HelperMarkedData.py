@@ -86,7 +86,7 @@ def jalankan_rekonsiliasi():
     ws = wb[SHEET_NAME]
     target_col = 8
     header_cell = ws.cell(row=1, column=target_col, value="Status Faktur")
-    header_cell.font = Font(bold=True, size=11)
+    header_cell.font = Font(bold=False, size=11)
     header_cell.alignment = Alignment(horizontal="center", vertical="center")
     pink_fill = PatternFill(start_color="F8CECC", end_color="F8CECC", fill_type="solid")
     yellow_fill = PatternFill(start_color="FFF2CC", end_color="FFF2CC", fill_type="solid")
