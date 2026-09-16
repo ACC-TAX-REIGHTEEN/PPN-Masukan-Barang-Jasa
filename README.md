@@ -47,7 +47,8 @@ Kedua hasil digabungkan ke satu workbook dengan ringkasan total terpadu.
 
 ## ✨ Fitur Utama
 
-- **Pemisahan otomatis Barang vs Jasa** — Accurate dibaca berdasarkan penanda seksi teks; Coretax difilter berdasarkan nama pemasok dari dua file teks konfigurasi terpisah.
+- **Pemisahan otomatis & kondisional Barang vs Jasa** — Accurate dibaca berdasarkan penanda seksi teks; Coretax difilter berdasarkan nama pemasok dan pilihan kriteria nominal PPN spesifik (`| nominal`) dari dua file teks konfigurasi terpisah.
+- **Auto-fit Formatting** — Memformat secara otomatis lebar kolom Excel output temporary agar rapi dan mudah dibaca.
 - **Deteksi kolom dinamis** — Mendukung dua format ekspor Coretax (nama kolom lama dan baru) secara otomatis via `find_column()` dengan kandidat dan fallback.
 - **Normalisasi nama pemasok** — Uppercase, hapus prefix PT./CV./UD./FA., terapkan alias dari `config.conf` sebelum pencocokan — mengurangi miss-match akibat variasi penulisan.
 - **Bersihkan nomor faktur** — Strip semua karakter non-alphanumerik, tangani notasi saintifik (misalnya `1.23e+10`) sebelum pencocokan.
@@ -297,6 +298,14 @@ Kolom tanggal dikonversi ke format teks Indonesia: `"1 Jan 2025"`, `"15 Des 2025
 
 Filtering dilakukan via substring match case-insensitive menggunakan pola gabungan `|` (OR) dari semua keyword di masing-masing file teks.
 
+**Logika Filtering & Filter Kondisional:**
+1. Membaca rule dari `hbrg.txt` dan `hjv.txt`.
+2. Mendukung 2 mode penulisan di file filter:
+   - **Mode Standar (`NAMA_VENDOR`)**: Memfilter berdasarkan nama penjual (substring match, case-insensitive).
+   - **Mode Kondisional (`NAMA_VENDOR | NOMINAL`)**: Memfilter berdasarkan nama penjual **DAN** mencocokkan nilai PPN dengan nominal yang ditentukan (toleransi selisih < 1.0).
+3. Hasil pemisahan disimpan ke `CtxBarang_temp.xlsx` (sheet: `CoretaxBarang`) dan `CtxJV_temp.xlsx` (sheet: `CoretaxJV`).
+4. Menerapkan fungsi `auto_fit_columns()` pada file temporary Excel yang dihasilkan.
+
 ---
 
 ### Skrip 3 — Rekonsiliasi Barang
@@ -406,15 +415,18 @@ PT SAHASRABHANU CIPTA KARYA = SAHASRABHANU CIPTA KARYA
 
 ---
 
-### `hbrg.txt` — Daftar pemasok Barang
+### `hbrg.txt` & `hjv.txt` — Daftar pemasok & Rule Kondisional
 
-```
-ARVIA JAYA
-ASTRA INTERNATIONAL TBK
-GAJAH TUNGGAL TBK
-SHELL INDONESIA
-...
-```
+File ini menentukan pemisahan transaksi dari Coretax ke kelompok **Barang** atau **JV/Jasa**.
+
+**Sintaks yang didukung:**
+
+1. **Filter Nama Vendor (Standar)**
+   ```txt
+   ARVIA JAYA
+   ASTRA INTERNATIONAL TBK
+   SHELL INDONESIA
+   ...
 
 Satu nama per baris. Setiap nama digunakan sebagai **substring filter** (case-insensitive) terhadap kolom nama penjual di `Coretaxm.xlsx`. Baris Coretax yang nama penjualnya mengandung salah satu dari nama-nama ini akan dimasukkan ke `CtxBarang_temp.xlsx`.
 
@@ -422,15 +434,15 @@ Satu nama per baris. Setiap nama digunakan sebagai **substring filter** (case-in
 
 ---
 
-### `hjv.txt` — Daftar pemasok JV/Jasa
-
-```
+2. **Filter Nama Vendor (Kondisional)**
+   ```txt
 ADI SARANA ARMADA TBK
 CAKRAWALA PUTRA NUSANTARA
 NASMOCO
 SERASI AUTORAYA
 ...
-```
+PT TELEKOMUNIKASI INDONESIA | 550.000
+PLN PERSERO | 1.250.000,00
 
 Format dan mekanisme sama dengan `hbrg.txt`, namun hasilnya masuk ke `CtxJV_temp.xlsx`.
 

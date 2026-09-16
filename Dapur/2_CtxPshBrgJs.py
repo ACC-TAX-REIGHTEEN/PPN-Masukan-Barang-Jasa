@@ -13,11 +13,13 @@ def format_tanggal_indonesia(tanggal_obj):
         7: 'Jul', 8: 'Agu', 9: 'Sep', 10: 'Okt', 11: 'Nop', 12: 'Des'
     }
     
-    tgl = tanggal_obj.day
-    bln = bulan_map[tanggal_obj.month]
-    thn = tanggal_obj.year
-    
-    return f"{tgl} {bln} {thn}"
+    try:
+        tgl = tanggal_obj.day
+        bln = bulan_map[tanggal_obj.month]
+        thn = tanggal_obj.year
+        return f"{tgl} {bln} {thn}"
+    except AttributeError:
+        return str(tanggal_obj)
 
 def auto_fit_columns(filename, sheet_name):
     wb = load_workbook(filename)
@@ -33,7 +35,7 @@ def auto_fit_columns(filename, sheet_name):
         
         for cell in column:
             try:
-                if cell.value:
+                if cell.value is not None:
                     length = len(str(cell.value))
                     if length > max_length:
                         max_length = length
@@ -46,41 +48,97 @@ def auto_fit_columns(filename, sheet_name):
     wb.save(filename)
     print(f"--> Format auto-fit selesai untuk: {filename} (Sheet: {sheet_name})")
 
-def baca_filter_txt(nama_file):
+def parse_nominal(val):
+    if pd.isnull(val) or val is None:
+        return None
+    val_str = str(val).replace('.', '').replace(',', '.').strip()
+    try:
+        return float(val_str)
+    except ValueError:
+        return None
+
+def baca_filter_txt_kondisional(nama_file):
     if not os.path.exists(nama_file):
-        print(f"--> Peringatan: File {nama_file} tidak ditemukan. Mengembalikan list kosong.")
+        print(f"--> Peringatan: File {nama_file} tidak ditemukan.")
         return []
     
-    with open(nama_file, 'r') as f:
-        lines = [line.strip() for line in f if line.strip()]
-    return lines
+    rules = []
+    with open(nama_file, 'r', encoding='utf-8') as f:
+        for line in f:
+            line_str = line.strip()
+            if not line_str:
+                continue
+            
+            if '|' in line_str:
+                parts = line_str.split('|')
+                vendor = parts[0].strip()
+                nom = parse_nominal(parts[1])
+                rules.append({'vendor': vendor, 'nominal': nom})
+            else:
+                rules.append({'vendor': line_str, 'nominal': None})
+                
+    return rules
 
-def filter_data(dataframe, keywords, column_name='Nama Penjual'):
-    if not keywords:
-        return pd.DataFrame(columns=dataframe.columns)
+def cari_nama_kolom(df, daftar_kemungkinan):
+    for col in df.columns:
+        for nama in daftar_kemungkinan:
+            if nama.lower() in str(col).lower():
+                return col
+    return None
+
+def pisahkan_jv_dan_barang(df, rules_jv, rules_brg):
+    col_penjual = cari_nama_kolom(df, [
+        "Nama Penjual Barang Kena Pajak/Barang Kena Pajak Tidak Berwujud/Jasa Kena Pajak",
+        "Nama Penjual",
+        "Nama Pemasok"
+    ])
     
-    target_column = column_name
-    if target_column not in dataframe.columns:
-        alt_column = "Nama Penjual Barang Kena Pajak/Barang Kena Pajak Tidak Berwujud/Jasa Kena Pajak"
-        if alt_column in dataframe.columns:
-            target_column = alt_column
-        else:
-            print(f"--> Peringatan: Kolom penjual tidak ditemukan di DataFrame.")
-            return pd.DataFrame(columns=dataframe.columns)
+    col_ppn = cari_nama_kolom(df, ["PPN", "Nilai PPN", "Jumlah PPN"])
 
-    pattern = '|'.join([k for k in keywords]) 
-    mask = dataframe[target_column].astype(str).str.contains(pattern, case=False, na=False)
-    return dataframe[mask]
+    if not col_penjual:
+        print("--> Error: Kolom nama penjual tidak ditemukan di Coretax.")
+        return pd.DataFrame(columns=df.columns), pd.DataFrame(columns=df.columns)
+
+    indices_jv = []
+    indices_brg = []
+
+    for idx, row in df.iterrows():
+        penjual_val = str(row[col_penjual]).upper()
+        ppn_val = parse_nominal(row[col_ppn]) if col_ppn else None
+
+        is_jv = False
+        for rule in rules_jv:
+            vendor_kw = rule['vendor'].upper()
+            rule_nom = rule['nominal']
+            
+            if vendor_kw in penjual_val:
+                if rule_nom is not None:
+                    if ppn_val is not None and abs(ppn_val - rule_nom) < 1.0:
+                        is_jv = True
+                        break
+                else:
+                    is_jv = True
+                    break
+
+        if is_jv:
+            indices_jv.append(idx)
+        else:
+            indices_brg.append(idx)
+
+    df_jv = df.loc[indices_jv].copy()
+    df_barang = df.loc[indices_brg].copy()
+
+    return df_jv, df_barang
 
 def main():
-    print("--> Mulai Proses")
+    print("--> Mulai Proses Pemisahan Data Coretax")
     file_sumber = 'Coretaxm.xlsx'
     print(f"--> Membaca {file_sumber}...")
 
     try:
         df = pd.read_excel(file_sumber, sheet_name='data')
     except FileNotFoundError:
-        print(f"--> Error: File {file_sumber} tidak ditemukan di folder ini.")
+        print(f"--> Error: File {file_sumber} tidak ditemukan di folder me ini.")
         sys.exit()
 
     col_tanggal_v1 = 'Tanggal Faktur Pajak'
@@ -97,11 +155,10 @@ def main():
         df[col_tanggal] = pd.to_datetime(df[col_tanggal])
         df[col_tanggal] = df[col_tanggal].apply(format_tanggal_indonesia)
 
-    keywords_jv = baca_filter_txt('hjv.txt')
-    keywords_brg = baca_filter_txt('hbrg.txt')
+    rules_jv = baca_filter_txt_kondisional('hjv.txt')
+    rules_brg = baca_filter_txt_kondisional('hbrg.txt')
 
-    df_jv = filter_data(df, keywords_jv)
-    df_barang = filter_data(df, keywords_brg)
+    df_jv, df_barang = pisahkan_jv_dan_barang(df, rules_jv, rules_brg)
 
     files_to_save = {
         'CtxJV_temp.xlsx': (df_jv, 'CoretaxJV'),
@@ -113,7 +170,7 @@ def main():
         data.to_excel(filename, index=False, sheet_name=sheetname)
         auto_fit_columns(filename, sheetname)
 
-    print("--> Selesai! Semua file berhasil dibuat.")
+    print("--> Selesai! Pemisahan data berhasil diproses.")
 
 if __name__ == "__main__":
     main()
