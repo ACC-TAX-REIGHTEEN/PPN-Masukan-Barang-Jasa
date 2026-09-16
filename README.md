@@ -426,8 +426,7 @@ File ini menentukan pemisahan transaksi dari Coretax ke kelompok **Barang** atau
    ARVIA JAYA
    ASTRA INTERNATIONAL TBK
    SHELL INDONESIA
-...
-```
+   ...
 
 Satu nama per baris. Setiap nama digunakan sebagai **substring filter** (case-insensitive) terhadap kolom nama penjual di `Coretaxm.xlsx`. Baris Coretax yang nama penjualnya mengandung salah satu dari nama-nama ini akan dimasukkan ke `CtxBarang_temp.xlsx`.
 
@@ -435,9 +434,8 @@ Satu nama per baris. Setiap nama digunakan sebagai **substring filter** (case-in
 
 ---
 
-### `hjv.txt` — Daftar pemasok JV/Jasa
-
-```
+2. **Filter Nama Vendor (Kondisional)**
+   ```txt
 ADI SARANA ARMADA TBK
 CAKRAWALA PUTRA NUSANTARA
 NASMOCO
@@ -445,7 +443,6 @@ SERASI AUTORAYA
 ...
 PT TELEKOMUNIKASI INDONESIA | 550.000
 PLN PERSERO | 1.250.000,00
-```
 
 Format dan mekanisme sama dengan `hbrg.txt`, namun hasilnya masuk ke `CtxJV_temp.xlsx`.
 
