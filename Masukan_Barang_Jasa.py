@@ -20,6 +20,7 @@ def main():
         "4_AnalyticsJsAccCtx.py",
         "5_MergeHasil.py",
         "6_HelperMarkedData.py",
+        "7_LookUpDescJV.py",
         "config.conf",
         "hbrg.txt",
         "hjv.txt"
@@ -31,7 +32,8 @@ def main():
         "3_AnalyticsBrgAccCtx.py",
         "4_AnalyticsJsAccCtx.py",
         "5_MergeHasil.py",
-        "6_HelperMarkedData.py"
+        "6_HelperMarkedData.py",
+        "7_LookUpDescJV.py"
     ]
 
     missing_root = [f for f in required_root_files if not os.path.exists(os.path.join(root_dir, f))]
