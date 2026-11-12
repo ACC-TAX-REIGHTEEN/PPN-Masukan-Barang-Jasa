@@ -14,6 +14,7 @@ def main():
 
     required_dapur_files = [
         "__init__.py",
+        "0_Ftch_github@AccTaxREighteen.py",
         "1_AccCleaner&PshBrgJs.py",
         "2_CtxPshBrgJs.py",
         "3_AnalyticsBrgAccCtx.py",
@@ -27,6 +28,7 @@ def main():
     ]
 
     scripts_to_run = [
+        "0_Ftch_github@AccTaxREighteen.py",
         "1_AccCleaner&PshBrgJs.py",
         "2_CtxPshBrgJs.py",
         "3_AnalyticsBrgAccCtx.py",
