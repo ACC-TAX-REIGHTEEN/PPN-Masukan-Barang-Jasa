@@ -3,6 +3,7 @@ import shutil
 import subprocess
 import sys
 
+
 def main():
     root_dir = os.getcwd()
     dapur_dir = os.path.join(root_dir, "Dapur")
@@ -39,7 +40,7 @@ def main():
     ]
 
     missing_root = [f for f in required_root_files if not os.path.exists(os.path.join(root_dir, f))]
-    
+
     if missing_root:
         print(f"--> File berikut tidak ditemukan di folder utama: {', '.join(missing_root)}")
         input("Tekan enter untuk keluar...")
@@ -64,7 +65,7 @@ def main():
                 if filename not in required_dapur_files:
                     try:
                         os.remove(file_path)
-                    except:
+                    except Exception:
                         pass
 
     try:
@@ -111,16 +112,18 @@ def main():
         sys.exit()
 
     files_to_remove = expected_results + ["Accuratem.xls", "Coretaxm.xlsx"]
-    
+
     for f in os.listdir('.'):
         if f in files_to_remove or f.endswith("temp.xlsx"):
             try:
                 os.remove(f)
-            except:
+            except Exception:
                 pass
 
     os.chdir(root_dir)
     print("--> Proses selesai. File hasil telah disalin ke folder utama.")
+    input("\nTekan enter untuk keluar...")
+
 
 if __name__ == "__main__":
     main()
