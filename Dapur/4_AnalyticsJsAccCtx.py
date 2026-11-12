@@ -1,7 +1,6 @@
-import itertools
 from datetime import datetime
-import os
-import sys
+import itertools
+import warnings
 import pandas as pd
 
 INPUT_FILE_CORETAX = "CtxJV_temp.xlsx"
@@ -26,6 +25,15 @@ BULAN_MAP = {
     "Agustus": "08",
     "Nop": "11",
 }
+
+
+def baca_excel_fleksibel(file_path, **kwargs):
+    try:
+        return pd.read_excel(file_path, engine="calamine", **kwargs)
+    except Exception:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            return pd.read_excel(file_path, engine="openpyxl", **kwargs)
 
 
 def parse_indo_date(date_val):
@@ -78,8 +86,8 @@ def extract_column(df, name_candidates, index_candidates):
 def main():
     print("--> Membaca file Excel...")
     try:
-        df_coretax = pd.read_excel(INPUT_FILE_CORETAX)
-        df_accurate = pd.read_excel(INPUT_FILE_ACCURATE)
+        df_coretax = baca_excel_fleksibel(INPUT_FILE_CORETAX)
+        df_accurate = baca_excel_fleksibel(INPUT_FILE_ACCURATE)
     except Exception as e:
         print(f"--> Gagal membaca file: {e}")
         return
@@ -94,7 +102,7 @@ def main():
             "Nama",
             "Pemasok",
         ],
-        index_candidates=[1, 0], 
+        index_candidates=[1, 0],
     )
 
     s_tgl_ct = extract_column(
@@ -111,7 +119,7 @@ def main():
     s_ppn_ct = extract_column(
         df_coretax,
         name_candidates=["PPN", "PPN (Rupiah)", "Jumlah PPN", "Nilai PPN"],
-        index_candidates=[11, 6],  
+        index_candidates=[11, 6],
     )
 
     ct_clean = pd.DataFrame()
@@ -301,7 +309,9 @@ def main():
         ac_desc = []
         total_ac = 0
         for x in ac_items:
-            ref_str = f", Ref: {x['Ref']}" if str(x["Ref"]).strip() != "" else ""
+            ref_str = (
+                f", Ref: {x['Ref']}" if str(x["Ref"]).strip() != "" else ""
+            )
             ac_desc.append(f"{x['PPN']:,.0f} ({fmt_date(x['Tanggal'])}{ref_str})")
             total_ac += x["PPN"]
 
@@ -347,7 +357,9 @@ def main():
                 "Tanggal Coretax": "",
                 "Nama Pemasok": "",
                 "PPN Coretax": 0,
-                "Rincian PPN Accurate": f"{x['PPN']:,.0f} ({fmt_date(x['Tanggal'])}{ref_str})",
+                "Rincian PPN Accurate": (
+                    f"{x['PPN']:,.0f} ({fmt_date(x['Tanggal'])}{ref_str})"
+                ),
                 "Total PPN Accurate": x["PPN"],
                 "Selisih": -x["PPN"],
                 "Keterangan": "Unmatched Accurate",
@@ -361,7 +373,10 @@ def main():
         ref1 = f", Ref: {item1['Ref']}" if str(item1["Ref"]).strip() != "" else ""
         ref2 = f", Ref: {item2['Ref']}" if str(item2["Ref"]).strip() != "" else ""
 
-        desc = f"{item1['PPN']:,.0f} ({fmt_date(item1['Tanggal'])}{ref1})\n{item2['PPN']:,.0f} ({fmt_date(item2['Tanggal'])}{ref2})"
+        desc = (
+            f"{item1['PPN']:,.0f} ({fmt_date(item1['Tanggal'])}{ref1})\n"
+            f"{item2['PPN']:,.0f} ({fmt_date(item2['Tanggal'])}{ref2})"
+        )
 
         final_rows.append(
             {

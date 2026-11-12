@@ -3,12 +3,22 @@ from datetime import datetime
 import os
 import re
 import sys
+import warnings
 import numpy as np
 import pandas as pd
 
 file_coretax = "CtxBarang_temp.xlsx"
 file_accurate = "AccBarang_temp.xlsx"
 output_filename = "Hasil_Analisis_Barang_temp.xlsx"
+
+
+def baca_excel_fleksibel(file_path, **kwargs):
+    try:
+        return pd.read_excel(file_path, engine="calamine", **kwargs)
+    except Exception:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            return pd.read_excel(file_path, engine="openpyxl", **kwargs)
 
 
 def clean_invoice_number(val):
@@ -153,9 +163,9 @@ def main():
 
     try:
         print(f"--> Membaca {file_coretax}...")
-        df_coretax = pd.read_excel(file_coretax, dtype=str)
+        df_coretax = baca_excel_fleksibel(file_coretax, dtype=str)
         print(f"--> Membaca {file_accurate}...")
-        df_accurate = pd.read_excel(file_accurate, dtype=str)
+        df_accurate = baca_excel_fleksibel(file_accurate, dtype=str)
     except Exception as e:
         print(f"--> Error membaca file Excel: {e}")
         sys.exit()
@@ -241,7 +251,7 @@ def main():
         .agg({"PPN_Clean": "sum", "formatted_date": "first"})
         .reset_index()
     )
-    coretax_agg.rename(columns={"PPN_Clean": "PPN_Coretax"}, inplace=True)
+    coretax_agg = coretax_agg.rename(columns={"PPN_Clean": "PPN_Coretax"})
 
     df_accurate["clean_invoice"] = df_accurate[a_faktur].apply(clean_invoice_number)
     df_accurate["clean_name"] = df_accurate[a_nama].apply(
@@ -258,7 +268,7 @@ def main():
         .agg({"PPN_Clean": "sum", "formatted_date": "first"})
         .reset_index()
     )
-    accurate_agg.rename(columns={"PPN_Clean": "PPN_Accurate"}, inplace=True)
+    accurate_agg = accurate_agg.rename(columns={"PPN_Clean": "PPN_Accurate"})
 
     print("--> Menggabungkan data...")
     merged = pd.merge(
