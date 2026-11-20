@@ -1,4 +1,3 @@
-import configparser
 from datetime import datetime
 import os
 import re
@@ -9,6 +8,7 @@ import pandas as pd
 
 file_coretax = "CtxBarang_temp.xlsx"
 file_accurate = "AccBarang_temp.xlsx"
+file_alias = "alias.txt"
 output_filename = "Hasil_Analisis_Barang_temp.xlsx"
 
 
@@ -138,22 +138,43 @@ def find_column(df, candidates, search_keyword):
     return None
 
 
+def muat_alias_dari_file(file_path):
+    alias_dict = {}
+    if not os.path.exists(file_path):
+        print(
+            f"--> Peringatan: File '{file_path}' tidak ditemukan. Berjalan tanpa alias eksternal."
+        )
+        return alias_dict
+
+    print(f"--> Memuat konfigurasi alias dari {file_path}...")
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            for line_no, raw_line in enumerate(f, start=1):
+                line = raw_line.strip()
+                if not line or line.startswith("#"):
+                    continue
+
+                if "=" in line:
+                    parts = line.split("=", 1)
+                    key = parts[0].strip().upper()
+                    val = parts[1].strip()
+                    if key:
+                        alias_dict[key] = val
+                else:
+                    print(
+                        f"--> [Perhatian] Baris {line_no} dilewati karena tidak ada tanda '=': '{line}'"
+                    )
+        print(f"--> Berhasil memuat {len(alias_dict)} entri alias.")
+    except Exception as e:
+        print(f"--> Peringatan: Gagal memproses file '{file_path}': {e}")
+
+    return alias_dict
+
+
 def main():
     print("--> Memulai proses analisis...")
 
-    alias_map = {}
-    config_file = "config.conf"
-    if os.path.exists(config_file):
-        print(f"--> Memuat konfigurasi dari {config_file}...")
-        config = configparser.ConfigParser()
-        config.read(config_file)
-        if "ALIAS" in config:
-            for key, val in config["ALIAS"].items():
-                alias_map[key.upper().strip()] = val.strip()
-    else:
-        print(
-            f"--> Peringatan: File '{config_file}' tidak ditemukan. Berjalan tanpa alias eksternal."
-        )
+    alias_map = muat_alias_dari_file(file_alias)
 
     if not os.path.exists(file_coretax) or not os.path.exists(file_accurate):
         print(
