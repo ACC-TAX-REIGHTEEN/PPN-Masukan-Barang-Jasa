@@ -6,7 +6,9 @@ import requests
 FILES_TO_UPDATE = {
     "alias.txt": "https://raw.githubusercontent.com/ACC-TAX-REIGHTEEN/Helper-For-Tax-Automation/refs/heads/main/alias.txt",
     "hbrg.txt": "https://raw.githubusercontent.com/ACC-TAX-REIGHTEEN/Helper-For-Tax-Automation/refs/heads/main/hbrg.txt",
-    "hjv.txt": "https://raw.githubusercontent.com/ACC-TAX-REIGHTEEN/Helper-For-Tax-Automation/refs/heads/main/hjv.txt"
+    "hbrg_acc.txt": "https://raw.githubusercontent.com/ACC-TAX-REIGHTEEN/Helper-For-Tax-Automation/refs/heads/main/hbrg_acc.txt",
+    "hjv.txt": "https://raw.githubusercontent.com/ACC-TAX-REIGHTEEN/Helper-For-Tax-Automation/refs/heads/main/hjv.txt",
+    "hjv_acc.txt": "https://raw.githubusercontent.com/ACC-TAX-REIGHTEEN/Helper-For-Tax-Automation/refs/heads/main/hjv_acc.txt"
 }
 
 def get_git_token():
