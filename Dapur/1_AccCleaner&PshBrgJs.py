@@ -1,3 +1,4 @@
+import os
 import sys
 import warnings
 import pandas as pd
@@ -75,6 +76,191 @@ def ekstrak_ppn_1(df_source):
     return pd.DataFrame(columns=["Tanggal", "Tgl. Pajak", "No. Referensi", "Jumlah Pajak"])
 
 
+def baca_file_referensi_txt(nama_file):
+    if not os.path.exists(nama_file):
+        print(f"--> Peringatan: File referensi '{nama_file}' tidak ditemukan.")
+        return []
+    for enc in ['utf-8', 'latin-1', 'cp1252']:
+        try:
+            with open(nama_file, 'r', encoding=enc) as f:
+                return [line.strip() for line in f if line.strip()]
+        except Exception:
+            continue
+    return []
+
+
+def baca_hjv_acc_2_bagian(nama_file):
+    list_pemasok = []
+    dict_referensi = {}
+
+    if not os.path.exists(nama_file):
+        print(f"--> Peringatan: File referensi '{nama_file}' tidak ditemukan.")
+        return list_pemasok, dict_referensi
+
+    lines = []
+    for enc in ['utf-8', 'latin-1', 'cp1252']:
+        try:
+            with open(nama_file, 'r', encoding=enc) as f:
+                lines = [line.strip() for line in f]
+            break
+        except Exception:
+            continue
+
+    current_mode = 'pemasok'
+
+    for raw_line in lines:
+        line = raw_line.strip()
+        if not line:
+            continue
+
+        line_upper = line.upper()
+        if line_upper in ['[PEMASOK]', '[NAMA PEMASOK]', '[BARANG_KE_JV]', '[BARANG TO JV]']:
+            current_mode = 'pemasok'
+            continue
+        elif line_upper in ['[REFERENSI]', '[NO REFERENSI]', '[NO. REFERENSI]', '[JV_KE_BARANG]', '[JV TO BARANG]']:
+            current_mode = 'referensi'
+            continue
+        elif line.startswith('---') or line.startswith('==='):
+            current_mode = 'referensi'
+            continue
+
+        if current_mode == 'pemasok':
+            list_pemasok.append(line)
+        else:
+            if '|' in line:
+                parts = line.split('|', 1)
+                ref_no = parts[0].strip()
+                vendor_opt = parts[1].strip()
+            else:
+                ref_no = line.strip()
+                vendor_opt = ""
+            if ref_no:
+                dict_referensi[ref_no] = vendor_opt
+
+    return list_pemasok, dict_referensi
+
+
+def proses_langkah_kedua():
+    file_barang = 'AccBarang_temp.xlsx'
+    file_jv = 'AccJV_temp.xlsx'
+    file_hbrg = 'hbrg_acc.txt'
+    file_hjv = 'hjv_acc.txt'
+
+    print("--> Memproses Langkah Kedua: Filter Referensi hbrg_acc.txt & hjv_acc.txt")
+
+    if not os.path.exists(file_barang) or not os.path.exists(file_jv):
+        print("--> Langkah Kedua dilewati: AccBarang_temp.xlsx atau AccJV_temp.xlsx tidak ditemukan.")
+        return
+
+    list_hbrg = baca_file_referensi_txt(file_hbrg)
+    set_hbrg_upper = {p.upper() for p in list_hbrg}
+
+    list_hjv_pemasok, dict_hjv_ref = baca_hjv_acc_2_bagian(file_hjv)
+    set_hjv_pemasok_upper = {p.upper() for p in list_hjv_pemasok}
+    map_hjv_ref_upper = {k.upper(): (k, v) for k, v in dict_hjv_ref.items()}
+
+    df_barang = None
+    df_jv = None
+    for eng in ['calamine', 'openpyxl', 'xlrd']:
+        try:
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                if df_barang is None:
+                    df_barang = pd.read_excel(
+                        file_barang,
+                        sheet_name='AccBarang',
+                        engine=eng,
+                        dtype={'No. Referensi': str, 'No. Faktur Pajak': str, 'Tanggal': str, 'Tgl. Pajak': str, 'Nama Pemasok': str}
+                    )
+                if df_jv is None:
+                    df_jv = pd.read_excel(
+                        file_jv,
+                        sheet_name='AccJV',
+                        engine=eng,
+                        dtype={'No. Referensi': str, 'Tanggal': str, 'Tgl. Pajak': str}
+                    )
+            if df_barang is not None and df_jv is not None:
+                break
+        except Exception:
+            continue
+
+    if df_barang is None or df_jv is None:
+        print("--> Gagal Langkah Kedua: Tidak dapat membaca file Excel hasil tahap 1.")
+        return
+
+    for col in ['No. Referensi', 'No. Faktur Pajak']:
+        if col in df_barang.columns:
+            df_barang[col] = df_barang[col].apply(bersihkan_koma_nol)
+    if 'No. Referensi' in df_jv.columns:
+        df_jv['No. Referensi'] = df_jv['No. Referensi'].apply(bersihkan_koma_nol)
+
+    df_barang['Jumlah Pajak'] = pd.to_numeric(df_barang['Jumlah Pajak'], errors='coerce').fillna(0)
+    df_jv['Jumlah Pajak'] = pd.to_numeric(df_jv['Jumlah Pajak'], errors='coerce').fillna(0)
+
+    if 'Nama Pemasok' in df_barang.columns:
+        pemasok_barang_unik = [p for p in df_barang['Nama Pemasok'].dropna().astype(str).str.strip().unique() if p != '']
+        pemasok_tidak_di_hbrg = [p for p in pemasok_barang_unik if p.upper() not in set_hbrg_upper]
+
+        if pemasok_tidak_di_hbrg:
+            print("--> Informasi: Ditemukan 'Nama Pemasok' di AccBarang_temp.xlsx yang tidak ada di hbrg_acc.txt:")
+            for p in pemasok_tidak_di_hbrg:
+                print(f"    * {p}")
+        else:
+            print("--> Informasi: Seluruh 'Nama Pemasok' di AccBarang_temp.xlsx sudah cocok dengan hbrg_acc.txt.")
+
+    ada_perubahan = False
+
+    if 'Nama Pemasok' in df_barang.columns and set_hjv_pemasok_upper:
+        mask_ke_jv = df_barang['Nama Pemasok'].astype(str).str.strip().str.upper().isin(set_hjv_pemasok_upper)
+        if mask_ke_jv.any():
+            baris_pindah_ke_jv = df_barang[mask_ke_jv].copy()
+            kolom_jv = ['Tanggal', 'Tgl. Pajak', 'No. Referensi', 'Jumlah Pajak']
+            baris_untuk_jv = baris_pindah_ke_jv[kolom_jv].copy()
+
+            df_jv = pd.concat([df_jv, baris_untuk_jv], ignore_index=True)
+            df_barang = df_barang[~mask_ke_jv].reset_index(drop=True)
+            ada_perubahan = True
+            print(f"--> Pindah Data: {len(baris_untuk_jv)} baris dipindahkan dari AccBarang -> AccJV (Kunci: Nama Pemasok di hjv_acc.txt)")
+
+    if 'No. Referensi' in df_jv.columns and map_hjv_ref_upper:
+        mask_ke_barang = df_jv['No. Referensi'].astype(str).str.strip().str.upper().isin(map_hjv_ref_upper.keys())
+        if mask_ke_barang.any():
+            baris_pindah_ke_brg = df_jv[mask_ke_barang].copy()
+            
+            baris_untuk_barang = pd.DataFrame()
+            baris_untuk_barang['Tanggal'] = baris_pindah_ke_brg['Tanggal']
+            baris_untuk_barang['Tgl. Pajak'] = baris_pindah_ke_brg['Tgl. Pajak']
+            baris_untuk_barang['No. Referensi'] = baris_pindah_ke_brg['No. Referensi']
+            baris_untuk_barang['No. Faktur Pajak'] = ""
+            
+            baris_untuk_barang['Nama Pemasok'] = baris_pindah_ke_brg['No. Referensi'].apply(
+                lambda x: map_hjv_ref_upper.get(str(x).strip().upper(), ("", ""))[1]
+            )
+            baris_untuk_barang['Jumlah Pajak'] = baris_pindah_ke_brg['Jumlah Pajak']
+
+            df_barang = pd.concat([df_barang, baris_untuk_barang], ignore_index=True)
+            df_jv = df_jv[~mask_ke_barang].reset_index(drop=True)
+            ada_perubahan = True
+            print(f"--> Pindah Data: {len(baris_untuk_barang)} baris dipindahkan dari AccJV -> AccBarang (Kunci: No. Referensi di hjv_acc.txt)")
+
+    if ada_perubahan:
+        kolom_barang_resmi = ["Tanggal", "Tgl. Pajak", "No. Referensi", "No. Faktur Pajak", "Nama Pemasok", "Jumlah Pajak"]
+        kolom_jv_resmi = ["Tanggal", "Tgl. Pajak", "No. Referensi", "Jumlah Pajak"]
+
+        df_barang = df_barang[kolom_barang_resmi]
+        df_jv = df_jv[kolom_jv_resmi]
+
+        df_barang.to_excel(file_barang, index=False, sheet_name="AccBarang")
+        print(f"--> Update Selesai: {file_barang} ({len(df_barang)} baris)")
+        auto_fit_columns(file_barang, "AccBarang")
+
+        df_jv.to_excel(file_jv, index=False, sheet_name="AccJV")
+        print(f"--> Update Selesai: {file_jv} ({len(df_jv)} baris)")
+        auto_fit_columns(file_jv, "AccJV")
+    else:
+        print("--> Tidak ada perpindahan baris data antara AccBarang dan AccJV.")
+
+
 def main():
     file_sumber = 'Accuratem.xls'
     print(f"--> Sedang membaca file {file_sumber}...")
@@ -145,6 +331,8 @@ def main():
             print(f"--> Gagal Tahap B: Terjadi kesalahan logika ({e})")
     else:
         print("--> Gagal Tahap B: Acuan dari Tahap A tidak ditemukan.")
+
+    proses_langkah_kedua()
 
     print("--> Selesai")
 
