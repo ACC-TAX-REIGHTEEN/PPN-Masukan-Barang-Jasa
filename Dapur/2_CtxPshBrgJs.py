@@ -1,4 +1,5 @@
 import os
+import re
 import sys
 import warnings
 import pandas as pd
@@ -57,7 +58,25 @@ def auto_fit_columns(filename, sheet_name):
 def parse_nominal(val):
     if pd.isnull(val) or val is None:
         return None
-    val_str = str(val).replace('.', '').replace(',', '.').strip()
+    if isinstance(val, (int, float)):
+        return float(val)
+    val_str = str(val).strip()
+    if not val_str:
+        return None
+    if ',' in val_str and '.' in val_str:
+        if val_str.rfind(',') > val_str.rfind('.'):
+            val_str = val_str.replace('.', '').replace(',', '.')
+        else:
+            val_str = val_str.replace(',', '')
+    elif ',' in val_str:
+        if val_str.count(',') > 1:
+            val_str = val_str.replace(',', '')
+        else:
+            val_str = val_str.replace(',', '.')
+    elif '.' in val_str:
+        parts = val_str.split('.')
+        if len(parts) > 2 or (len(parts) == 2 and len(parts[1]) == 3):
+            val_str = val_str.replace('.', '')
     try:
         return float(val_str)
     except ValueError:
@@ -77,22 +96,67 @@ def baca_filter_txt_kondisional(nama_file):
                 continue
 
             if '|' in line_str:
-                parts = line_str.split('|')
+                parts = line_str.split('|', 1)
                 vendor = parts[0].strip()
                 nom = parse_nominal(parts[1])
-                rules.append({'vendor': vendor, 'nominal': nom})
             else:
-                rules.append({'vendor': line_str, 'nominal': None})
+                vendor = line_str
+                nom = None
+
+            if not vendor:
+                continue
+
+            pattern = re.compile(rf'(?<![A-Z0-9]){re.escape(vendor.upper())}(?![A-Z0-9])')
+            rules.append({'vendor': vendor, 'pattern': pattern, 'nominal': nom})
 
     return rules
 
 
 def cari_nama_kolom(df, daftar_kemungkinan):
-    for col in df.columns:
-        for nama in daftar_kemungkinan:
-            if nama.lower() in str(col).lower():
+    for nama in daftar_kemungkinan:
+        target = nama.lower()
+        for col in df.columns:
+            if str(col).strip().lower() == target:
+                return col
+
+    for nama in daftar_kemungkinan:
+        target = nama.lower()
+        for col in df.columns:
+            if target in str(col).strip().lower():
                 return col
     return None
+
+
+def deteksi_kolom_string(file_sumber):
+    kata_kunci_str = ('npwp', 'nomor', 'kode', 'nik', 'nitku', 'referensi')
+    try:
+        header_df = pd.read_excel(file_sumber, sheet_name='data', nrows=0, engine='calamine')
+    except Exception:
+        try:
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                header_df = pd.read_excel(file_sumber, sheet_name='data', nrows=0, engine='openpyxl')
+        except Exception:
+            return {}
+
+    dtype_map = {}
+    for col in header_df.columns:
+        col_lower = str(col).lower()
+        if any(k in col_lower for k in kata_kunci_str):
+            dtype_map[col] = str
+    return dtype_map
+
+
+def cocok_aturan(penjual_val, ppn_val, rules):
+    for rule in rules:
+        if rule['pattern'].search(penjual_val):
+            rule_nom = rule['nominal']
+            if rule_nom is not None:
+                if ppn_val is not None and abs(ppn_val - rule_nom) < 1.0:
+                    return True
+            else:
+                return True
+    return False
 
 
 def pisahkan_jv_dan_barang(df, rules_jv, rules_brg):
@@ -102,37 +166,40 @@ def pisahkan_jv_dan_barang(df, rules_jv, rules_brg):
         "Nama Pemasok"
     ])
 
-    col_ppn = cari_nama_kolom(df, ["PPN", "Nilai PPN", "Jumlah PPN"])
+    col_ppn = cari_nama_kolom(df, ["Jumlah PPN", "Nilai PPN", "PPN"])
 
     if not col_penjual:
         print("--> Error: Kolom nama penjual tidak ditemukan di Coretax.")
         return pd.DataFrame(columns=df.columns), pd.DataFrame(columns=df.columns)
 
+    penjual_list = df[col_penjual].fillna('').astype(str).str.upper().tolist()
+    ppn_list = [parse_nominal(v) for v in df[col_ppn]] if col_ppn else [None] * len(df)
+
     indices_jv = []
     indices_brg = []
+    konflik_vendors = set()
+    diabaikan = 0
 
-    for idx, row in df.iterrows():
-        penjual_val = str(row[col_penjual]).upper()
-        ppn_val = parse_nominal(row[col_ppn]) if col_ppn else None
+    for idx, penjual_val, ppn_val in zip(df.index, penjual_list, ppn_list):
+        is_jv = cocok_aturan(penjual_val, ppn_val, rules_jv)
+        is_brg = cocok_aturan(penjual_val, ppn_val, rules_brg)
 
-        is_jv = False
-        for rule in rules_jv:
-            vendor_kw = rule['vendor'].upper()
-            rule_nom = rule['nominal']
-
-            if vendor_kw in penjual_val:
-                if rule_nom is not None:
-                    if ppn_val is not None and abs(ppn_val - rule_nom) < 1.0:
-                        is_jv = True
-                        break
-                else:
-                    is_jv = True
-                    break
+        if is_jv and is_brg:
+            konflik_vendors.add(penjual_val)
 
         if is_jv:
             indices_jv.append(idx)
-        else:
+        elif is_brg:
             indices_brg.append(idx)
+        else:
+            diabaikan += 1
+
+    if konflik_vendors:
+        daftar_konflik = ', '.join(sorted(konflik_vendors))
+        print(f"--> Peringatan: Vendor berikut cocok di hjv.txt dan hbrg.txt sekaligus (diprioritaskan ke JV): {daftar_konflik}")
+
+    if diabaikan > 0:
+        print(f"--> Info: {diabaikan} baris tidak terdaftar di hjv.txt maupun hbrg.txt (dilewati).")
 
     df_jv = df.loc[indices_jv].copy()
     df_barang = df.loc[indices_brg].copy()
@@ -149,14 +216,16 @@ def main():
         print(f"--> Error: File {file_sumber} tidak ditemukan di folder ini.")
         sys.exit()
 
+    dtype_map = deteksi_kolom_string(file_sumber)
+
     df = None
     try:
-        df = pd.read_excel(file_sumber, sheet_name='data', engine='calamine')
+        df = pd.read_excel(file_sumber, sheet_name='data', dtype=dtype_map, engine='calamine')
     except Exception:
         try:
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
-                df = pd.read_excel(file_sumber, sheet_name='data', engine='openpyxl')
+                df = pd.read_excel(file_sumber, sheet_name='data', dtype=dtype_map, engine='openpyxl')
         except Exception as e:
             print(f"--> Error membaca file {file_sumber}: {e}")
             sys.exit()
@@ -177,6 +246,10 @@ def main():
 
     rules_jv = baca_filter_txt_kondisional('hjv.txt')
     rules_brg = baca_filter_txt_kondisional('hbrg.txt')
+
+    if not rules_brg:
+        print("--> Error: File 'hbrg.txt' wajib diisi (minimal 1 aturan vendor). Proses dibatalkan.")
+        sys.exit()
 
     df_jv, df_barang = pisahkan_jv_dan_barang(df, rules_jv, rules_brg)
 
